@@ -1,4 +1,4 @@
-name = "dify-extension-example"
+name = "dify-extensions-worker"
 compatibility_date = "2023-01-01"
 
 [vars]
