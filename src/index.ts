@@ -1,61 +1,26 @@
-import { Hono } from "hono";
-import { bearerAuth } from "hono/bearer-auth";
-import { z } from "zod";
-import { zValidator } from "@hono/zod-validator";
-import { generateSchema } from '@anatine/zod-openapi';
+// src/index.ts
+export default {
+  async fetch(req: Request, env: any) {
+    // 只做最简单健康检查
+    if (req.method === "GET") return new Response("OK");
 
-type Bindings = {
-  TOKEN: string;
-};
+    // 只处理 /endpoint 且 token 正确
+    const url = new URL(req.url);
+    if (url.pathname !== "/endpoint") return new Response("404", { status: 404 });
 
-const app = new Hono<{ Bindings: Bindings }>();
+    const body = await req.json<any>();
+    if (body.point !== "app.external_data_tool.query") return new Response("ignore");
 
-const schema = z.object({
-  point: z.union([
-    z.literal("ping"),
-    z.literal("app.external_data_tool.query"),
-  ]), // Restricts 'point' to two specific values
-  params: z
-    .object({
-      app_id: z.string().optional(),
-      tool_variable: z.string().optional(),
-      inputs: z.record(z.any()).optional(),
-      query: z.any()
-    })
-    .optional(),
-});
-
-// Generate OpenAPI schema
-app.get("/", (c) => {
-  return c.json(generateSchema(schema));
-});
-
-
-app.post(
-  "/endpoint",
-  (c, next) => {
-    const auth = bearerAuth({ token: c.env.TOKEN });
-    return auth(c, next);
-  },
-  zValidator("json", schema),
-  async (c) => {
-    const { point, params } = c.req.valid("json");
-    if (point === "ping") {
-      return c.json({
-        result: "pong",
-      });
-    }
-    // ⬇️ impliment your logic here ⬇️
-    // point === "app.external_data_tool.query"
-    // https://api.breakingbadquotes.xyz/v1/quotes
-    const count = params?.inputs?.count ?? 1;
-    const url = `https://api.breakingbadquotes.xyz/v1/quotes/${count}`;
-    const result = await fetch(url).then(res => res.text())
-    // ⬆️ impliment your logic here ⬆️
-    return c.json({
-      result
+    // 取 prompt
+    const prompt = body.params?.inputs?.prompt ?? "Hi";
+    const ai = new Ai(env.AI);            // Workers AI binding
+    const { response } = await ai.run("@cf/meta/llama-3-8b-instruct", {
+      prompt,
+      stream: false,
     });
-  }
-);
 
-export default app;
+    return new Response(JSON.stringify({ result: response }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  },
+};
